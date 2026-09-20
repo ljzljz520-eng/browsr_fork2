@@ -5,12 +5,10 @@ The Primary Content Container
 from __future__ import annotations
 
 import inspect
-import pathlib
-import shutil
 from typing import Any
 
 import pyperclip
-from textual import on, work
+from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.events import Mount
@@ -26,9 +24,9 @@ from browsr.base import (
     TextualAppContext,
 )
 from browsr.config import favorite_themes
+from browsr.downloader import DownloadJob, DownloadManager, JobStatus
 from browsr.utils import (
     get_file_info,
-    handle_duplicate_filenames,
 )
 from browsr.widgets.base import BaseOverlay, BasePopUp
 from browsr.widgets.confirmation import ConfirmationPopUp, ConfirmationWindow
@@ -84,6 +82,9 @@ class CodeBrowser(Container):
         self.initial_file_path = file_path
         self.directory_tree = BrowsrDirectoryTree(file_path, id="tree-view")
         self.window_switcher = WindowSwitcher(config_object=self.config_object)
+        self.download_manager = DownloadManager(
+            terminal_callback=self.handle_job_terminal
+        )
         self.confirmation = ConfirmationPopUp()
         self.confirmation_window = ConfirmationWindow(
             self.confirmation, id="confirmation-container"
@@ -173,18 +174,86 @@ class CodeBrowser(Container):
         self, _: ConfirmationPopUp.ConfirmationWindowDownload
     ) -> None:
         """
-        Handle the download confirmation.
+        Start a download job after the user confirms.
         """
-        self.download_selected_file()
+        if self.selected_file_path is None:
+            return
+        job_id = self.download_manager.start(source=self.selected_file_path)
+        self.confirmation.attach_job(job_id=job_id, manager=self.download_manager)
+
+    @on(ConfirmationPopUp.RetryRequested)
+    def handle_download_retry(
+        self, message: ConfirmationPopUp.RetryRequested
+    ) -> None:
+        """
+        Retry a terminal download job under a new job-id.
+        """
+        if message.job_id != self.confirmation.current_job_id:
+            # A stale retry for an already-replaced job must not start
+            # anything on top of the new overlay.
+            return
+        new_job_id = self.download_manager.retry(message.job_id)
+        self.confirmation.attach_job(
+            job_id=new_job_id, manager=self.download_manager
+        )
+
+    @on(ConfirmationPopUp.JobFinished)
+    def handle_job_finished_notification(
+        self, message: ConfirmationPopUp.JobFinished
+    ) -> None:
+        """
+        Notify the user of a terminal job (even if the overlay was dismissed).
+        """
+        if message.status is JobStatus.COMPLETED:
+            self.notify(
+                message=str(message.destination),
+                title="Download Complete",
+                severity="information",
+                timeout=2,
+            )
+        elif message.status is JobStatus.CANCELED:
+            self.notify(
+                message=str(message.destination),
+                title="Download Canceled",
+                severity="warning",
+                timeout=2,
+            )
+        else:
+            self.notify(
+                message=message.error or "Unknown error",
+                title="Download Failed",
+                severity="error",
+                timeout=3,
+            )
 
     @on(ConfirmationPopUp.DisplayToggle)
     def handle_confirmation_window_display_toggle(
-        self, _: ConfirmationPopUp.DisplayToggle
+        self, message: ConfirmationPopUp.DisplayToggle
     ) -> None:
         """
         Handle the confirmation window display toggle.
+
+        Toggles carrying a job-id are ignored once that job is no
+        longer bound: an old job must not close a new overlay.
         """
+        if (
+            message.job_id is not None
+            and message.job_id != self.confirmation.current_job_id
+        ):
+            return
         self._close_overlay(self.confirmation_window)
+
+    def handle_job_terminal(self, job: DownloadJob) -> None:
+        """
+        Marshal a worker-thread terminal event onto the UI thread.
+        """
+        message = ConfirmationPopUp.JobFinished(
+            job_id=job.job_id,
+            status=job.status,
+            error=job.error,
+            destination=str(job.target.destination),
+        )
+        self.app.call_from_thread(self.post_message, message)
 
     @on(ShortcutsPopUp.DisplayToggle)
     def handle_shortcuts_window_display_toggle(
@@ -316,7 +385,7 @@ class CodeBrowser(Container):
 
     def download_file_workflow(self) -> None:
         """
-        Download the selected file.
+        Open the download confirmation for the selected file.
         """
         if self.selected_file_path is None:
             return
@@ -326,10 +395,8 @@ class CodeBrowser(Container):
             if self._get_active_overlay() is self.confirmation_window:
                 self._close_overlay(self.confirmation_window)
                 return
-            handled_download_path = self._get_download_file_name()
             self.confirmation.prompt_download(
                 file_path=str(self.selected_file_path),
-                download_path=str(handled_download_path),
             )
             self._show_overlay(self.confirmation_window)
 
@@ -342,36 +409,3 @@ class CodeBrowser(Container):
         else:
             self.shortcuts.update_shortcuts()
             self._show_overlay(self.shortcuts_window)
-
-    @work(thread=True)
-    def download_selected_file(self) -> None:
-        """
-        Download the selected file.
-        """
-        if self.selected_file_path is None:
-            return
-        elif self.selected_file_path.is_dir():
-            return
-        elif is_remote_path(self.selected_file_path):
-            handled_download_path = self._get_download_file_name()
-            with self.selected_file_path.open("rb") as file_handle:
-                with handled_download_path.open("wb") as download_handle:
-                    shutil.copyfileobj(file_handle, download_handle)
-            self.notify(
-                message=str(handled_download_path),
-                title="Download Complete",
-                severity="information",
-                timeout=2,
-            )
-
-    def _get_download_file_name(self) -> UPath | pathlib.Path:
-        """
-        Get the download file name.
-        """
-        download_dir = pathlib.Path.home() / "Downloads"
-        if not download_dir.exists():
-            msg = f"Download directory {download_dir} not found"
-            raise FileNotFoundError(msg)
-        download_path = download_dir / self.selected_file_path.name  # type: ignore[union-attr]
-        handled_download_path = handle_duplicate_filenames(file_path=download_path)
-        return handled_download_path

@@ -77,17 +77,32 @@ ConfirmationWindow {
 ConfirmationPopUp {
     background: $boost;
     height: auto;
+    width: auto;
     max-width: 100;
-    min-width: 40;
+    min-width: 48;
     border: wide $primary;
     padding: 1 2;
     margin: 1 2;
     box-sizing: border-box;
 }
 
-ConfirmationPopUp Button {
+ConfirmationPopUp #download-progress {
     margin-top: 1;
     width: 100%;
+}
+
+ConfirmationPopUp #progress-detail {
+    margin-top: 1;
+}
+
+ConfirmationPopUp #confirmation-buttons {
+    margin-top: 1;
+    height: auto;
+}
+
+ConfirmationPopUp #confirmation-buttons Button {
+    width: 1fr;
+    margin: 0 1;
 }
 
 /* -- ShortcutsPopUp -- */

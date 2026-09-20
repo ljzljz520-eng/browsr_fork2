@@ -101,11 +101,6 @@ async def test_download_confirmation_restores_text_window(
         monkeypatch.setattr(
             "browsr.widgets.code_browser.is_remote_path", lambda _: True
         )
-        monkeypatch.setattr(
-            code_browser,
-            "_get_download_file_name",
-            lambda: repo_dir / "downloaded-example.txt",
-        )
 
         code_browser.selected_file_path = selected_file_path
         code_browser.window_switcher.vim_scroll.display = False
@@ -141,11 +136,6 @@ async def test_shortcuts_and_confirmation_can_switch_back_and_forth(
 
         monkeypatch.setattr(
             "browsr.widgets.code_browser.is_remote_path", lambda _: True
-        )
-        monkeypatch.setattr(
-            code_browser,
-            "_get_download_file_name",
-            lambda: repo_dir / "downloaded-example.txt",
         )
 
         code_browser.selected_file_path = selected_file_path
@@ -193,11 +183,6 @@ async def test_download_confirmation_popup_stays_within_viewport(
         monkeypatch.setattr(
             "browsr.widgets.code_browser.is_remote_path", lambda _: True
         )
-        monkeypatch.setattr(
-            code_browser,
-            "_get_download_file_name",
-            lambda: repo_dir / "downloaded-example.txt",
-        )
 
         code_browser.selected_file_path = selected_file_path
         code_browser.download_file_workflow()
@@ -231,11 +216,6 @@ async def test_download_confirmation_escape_restores_text_window(
 
         monkeypatch.setattr(
             "browsr.widgets.code_browser.is_remote_path", lambda _: True
-        )
-        monkeypatch.setattr(
-            code_browser,
-            "_get_download_file_name",
-            lambda: repo_dir / "downloaded-example.txt",
         )
 
         code_browser.selected_file_path = selected_file_path
